@@ -1,10 +1,16 @@
 // Backend for Hired Teens: job storage + job posting payments.
 //
 // Routes:
-//   GET  /jobs                      - returns all published jobs (the job board's data source)
-//   POST /create-checkout-session   - validates a new job post and starts a Stripe Checkout session for it
-//   POST /webhook                   - receives Stripe's checkout.session.completed event, publishes the job
-//   GET  /check-payment-status      - lets the frontend confirm + publish immediately on return from Stripe
+//   GET    /jobs                      - returns all published jobs (the job board's data source)
+//   POST   /create-checkout-session   - validates a new job post and starts a Stripe Checkout session for it
+//   POST   /webhook                   - receives Stripe's checkout.session.completed event, publishes the job
+//   GET    /check-payment-status      - lets the frontend confirm + publish immediately on return from Stripe
+//   GET    /admin/jobs                - (password-protected) same job data as /jobs, for the admin panel
+//   PUT    /admin/jobs/:id            - (password-protected) edit an existing job's fields
+//   DELETE /admin/jobs/:id            - (password-protected) remove a job entirely
+//
+// Admin routes require an `X-Admin-Password` header matching the ADMIN_PASSWORD
+// environment variable. If ADMIN_PASSWORD isn't set, admin routes are disabled.
 //
 // The frontend (job-board-optimized.html) never talks to Stripe directly, never
 // sees your secret key, and never stores job data itself — this server is the
@@ -27,6 +33,24 @@ for (const key of REQUIRED_ENV) {
     console.error(`Missing required environment variable: ${key}. Check your .env file (see .env.example).`);
     process.exit(1);
   }
+}
+
+// Admin password is optional but strongly recommended — without it, the
+// admin edit/delete routes below simply refuse all requests.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+if (!ADMIN_PASSWORD) {
+  console.warn('ADMIN_PASSWORD is not set — the admin panel routes will be disabled until it is configured.');
+}
+
+function requireAdmin(req, res, next) {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({ error: 'Admin access is not configured on this server.' });
+  }
+  const provided = req.headers['x-admin-password'];
+  if (provided !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Incorrect password.' });
+  }
+  next();
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -168,6 +192,50 @@ app.get('/jobs', (req, res) => {
   res.json(readJobs());
 });
 
+// ---- Admin: view all jobs (same data as /jobs, but behind a password —
+// kept separate so the public endpoint's shape/behavior never has to change) ----
+app.get('/admin/jobs', requireAdmin, (req, res) => {
+  res.json(readJobs());
+});
+
+// ---- Admin: edit an existing job's details ----
+const EDITABLE_JOB_FIELDS = [
+  'title', 'company', 'location', 'type', 'salary', 'payType',
+  'startDate', 'endDate', 'email', 'link', 'description', 'tags',
+];
+
+app.put('/admin/jobs/:id', requireAdmin, (req, res) => {
+  const jobs = readJobs();
+  const job = jobs.find(j => j.id === req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found.' });
+  }
+
+  for (const field of EDITABLE_JOB_FIELDS) {
+    if (field in req.body) {
+      job[field] = req.body[field];
+    }
+  }
+
+  writeJobs(jobs);
+  console.log(`[admin] updated job ${job.id}`);
+  res.json(job);
+});
+
+// ---- Admin: remove a job entirely ----
+app.delete('/admin/jobs/:id', requireAdmin, (req, res) => {
+  const jobs = readJobs();
+  const index = jobs.findIndex(j => j.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Job not found.' });
+  }
+
+  const [removed] = jobs.splice(index, 1);
+  writeJobs(jobs);
+  console.log(`[admin] deleted job ${removed.id}`);
+  res.json({ deleted: true, job: removed });
+});
+
 // Allowed post lengths and how many "listing units" each one costs.
 // 30 days = 1x the base price; every additional 30-day increment adds
 // another full unit (60 days = 2x, 90 days = 3x, 120 days = 4x).
@@ -188,7 +256,8 @@ app.post('/create-checkout-session', async (req, res) => {
       startDate, endDate, postLength, email, link, description, tags,
     } = req.body;
 
-    if (!title || !company || !location || !description || !salary || !email) {
+    const salaryRequired = payType !== 'unpaid';
+    if (!title || !company || !location || !description || !email || (salaryRequired && !salary)) {
       console.log('[create-checkout-session] rejected: missing required fields');
       return res.status(400).json({ error: 'Please fill in title, business or organization name, location, pay, email, and description.' });
     }
