@@ -1,0 +1,3 @@
+{
+  "ignore": ["jobs.json", "pending_jobs.json", "paid_sessions.json", "*.json.tmp"]
+}
