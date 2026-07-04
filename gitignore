@@ -1,3 +1,5 @@
 node_modules/
 .env
+jobs.json
+pending_jobs.json
 paid_sessions.json
