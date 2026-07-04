@@ -290,8 +290,7 @@ app.post('/create-checkout-session', async (req, res) => {
       startDate, endDate, postLength, email, link, description, tags, logo,
     } = req.body;
 
-    const salaryRequired = payType !== 'unpaid';
-    if (!title || !company || !location || !description || !email || (salaryRequired && !salary)) {
+    if (!title || !company || !location || !description || !email || !salary) {
       console.log('[create-checkout-session] rejected: missing required fields');
       return res.status(400).json({ error: 'Please fill in title, business or organization name, location, pay, email, and description.' });
     }
