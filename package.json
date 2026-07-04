@@ -1,0 +1,17 @@
+{
+  "name": "hired-teens-payments",
+  "version": "1.0.0",
+  "description": "Small backend that handles Stripe payment for job postings on the Hired Teens job board.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "setup-product": "node setup_product.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "stripe": "^16.0.0"
+  }
+}
