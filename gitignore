@@ -1,5 +1,4 @@
 node_modules/
-.env
 jobs.store
 pending_jobs.store
 paid_sessions.store
