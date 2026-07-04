@@ -168,6 +168,17 @@ app.get('/jobs', (req, res) => {
   res.json(readJobs());
 });
 
+// Allowed post lengths and how many "listing units" each one costs.
+// 30 days = 1x the base price; every additional 30-day increment adds
+// another full unit (60 days = 2x, 90 days = 3x, 120 days = 4x).
+const VALID_POST_LENGTHS = [30, 60, 90, 120];
+
+function postLengthToQuantity(postLength) {
+  const days = parseInt(postLength, 10);
+  if (!VALID_POST_LENGTHS.includes(days)) return null;
+  return days / 30;
+}
+
 // ---- Validate a new job post and start a Checkout Session for it ----
 app.post('/create-checkout-session', async (req, res) => {
   console.log('[create-checkout-session] request received');
@@ -180,6 +191,12 @@ app.post('/create-checkout-session', async (req, res) => {
     if (!title || !company || !location || !description || !salary || !email) {
       console.log('[create-checkout-session] rejected: missing required fields');
       return res.status(400).json({ error: 'Please fill in title, business or organization name, location, pay, email, and description.' });
+    }
+
+    const quantity = postLengthToQuantity(postLength);
+    if (!quantity) {
+      console.log('[create-checkout-session] rejected: invalid postLength', postLength);
+      return res.status(400).json({ error: 'Please choose a valid post length.' });
     }
 
     const pendingId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
@@ -195,13 +212,13 @@ app.post('/create-checkout-session', async (req, res) => {
     };
     writePending(pending);
 
-    console.log('[create-checkout-session] calling Stripe API...');
+    console.log(`[create-checkout-session] calling Stripe API (postLength=${postLength}, quantity=${quantity})...`);
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [
         {
           price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
+          quantity,
         },
       ],
       metadata: { pendingId },
