@@ -29,7 +29,10 @@ for (const key of REQUIRED_ENV) {
   }
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  timeout: 15000,       // fail fast instead of hanging indefinitely on a slow/blocked network path
+  maxNetworkRetries: 2, // retries transient network errors automatically
+});
 const app = express();
 const PORT = process.env.PORT || 4242;
 
@@ -167,6 +170,7 @@ app.get('/jobs', (req, res) => {
 
 // ---- Validate a new job post and start a Checkout Session for it ----
 app.post('/create-checkout-session', async (req, res) => {
+  console.log('[create-checkout-session] request received');
   try {
     const {
       title, company, location, type, salary, payType,
@@ -174,6 +178,7 @@ app.post('/create-checkout-session', async (req, res) => {
     } = req.body;
 
     if (!title || !company || !location || !description || !salary || !email) {
+      console.log('[create-checkout-session] rejected: missing required fields');
       return res.status(400).json({ error: 'Please fill in title, business or organization name, location, pay, email, and description.' });
     }
 
@@ -190,6 +195,7 @@ app.post('/create-checkout-session', async (req, res) => {
     };
     writePending(pending);
 
+    console.log('[create-checkout-session] calling Stripe API...');
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [
@@ -202,10 +208,11 @@ app.post('/create-checkout-session', async (req, res) => {
       success_url: `${process.env.SITE_URL}?paid=1&pending_id=${encodeURIComponent(pendingId)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.SITE_URL}?canceled=1`,
     });
+    console.log('[create-checkout-session] Stripe API responded, session:', session.id);
 
     res.json({ url: session.url });
   } catch (err) {
-    console.error('Failed to create checkout session:', err.message);
+    console.error('[create-checkout-session] FAILED:', err.message);
     res.status(500).json({ error: 'Could not start checkout. Please try again.' });
   }
 });
@@ -213,13 +220,16 @@ app.post('/create-checkout-session', async (req, res) => {
 // ---- Confirm whether a session was actually paid, and publish if so ----
 // Authoritative check: asks Stripe directly rather than trusting the URL.
 app.get('/check-payment-status', async (req, res) => {
+  console.log('[check-payment-status] request received');
   try {
     const { session_id, pending_id } = req.query;
     if (!session_id || !pending_id) {
       return res.status(400).json({ paid: false, error: 'session_id and pending_id are required.' });
     }
 
+    console.log('[check-payment-status] calling Stripe API...');
     const session = await stripe.checkout.sessions.retrieve(String(session_id));
+    console.log('[check-payment-status] Stripe API responded, payment_status:', session.payment_status);
 
     const metadataMatches = session.metadata && session.metadata.pendingId === pending_id;
     const isPaid = session.payment_status === 'paid' && metadataMatches;
