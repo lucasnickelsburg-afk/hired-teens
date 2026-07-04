@@ -6,6 +6,7 @@
 //   POST   /webhook                   - receives Stripe's checkout.session.completed event, publishes the job
 //   GET    /check-payment-status      - lets the frontend confirm + publish immediately on return from Stripe
 //   GET    /admin/jobs                - (password-protected) same job data as /jobs, for the admin panel
+//   POST   /admin/jobs                - (password-protected) create a new listing directly, bypassing payment
 //   PUT    /admin/jobs/:id            - (password-protected) edit an existing job's fields
 //   DELETE /admin/jobs/:id            - (password-protected) remove a job entirely
 //
@@ -196,6 +197,33 @@ app.get('/jobs', (req, res) => {
 // kept separate so the public endpoint's shape/behavior never has to change) ----
 app.get('/admin/jobs', requireAdmin, (req, res) => {
   res.json(readJobs());
+});
+
+// ---- Admin: create a new job listing directly, bypassing payment ----
+app.post('/admin/jobs', requireAdmin, (req, res) => {
+  const {
+    title, company, location, type, salary, payType,
+    startDate, endDate, email, link, description, tags,
+  } = req.body;
+
+  const salaryRequired = payType !== 'unpaid';
+  if (!title || !company || !location || !description || !email || (salaryRequired && !salary)) {
+    return res.status(400).json({ error: 'Please fill in title, business or organization name, location, pay, email, and description.' });
+  }
+
+  const jobs = readJobs();
+  const newJob = {
+    title, company, location, type, salary, payType,
+    startDate, endDate, email, link, description,
+    tags: tags || [],
+    id: 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    postedAt: Date.now(),
+  };
+  jobs.push(newJob);
+  writeJobs(jobs);
+
+  console.log(`[admin] created job ${newJob.id}`);
+  res.status(201).json(newJob);
 });
 
 // ---- Admin: edit an existing job's details ----
