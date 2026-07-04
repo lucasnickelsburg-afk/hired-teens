@@ -547,7 +547,7 @@
         <option value="90">90 days</option>
         <option value="120">120 days</option>
       </select>
-      <div class="field-hint">For posts longer than 120 days, <a href="#" onclick="showContact(); return false;">contact us</a>.</div>
+      <div class="field-hint">The listing fee increases by one listing's price for every extra 30 days beyond the base 30-day post (e.g. 60 days = 2x, 120 days = 4x). For posts longer than 120 days, <a href="#" onclick="showContact(); return false;">contact us</a>.</div>
     </div>
     <div class="field">
       <label>Email</label>
@@ -665,7 +665,7 @@
 <script>
 // Set this to wherever you deploy the stripe-backend server (see its README).
 // Example: 'https://hired-teens-payments.onrender.com'
-const PAYMENTS_BACKEND_URL = 'https://teenpay.bonto.run';
+const PAYMENTS_BACKEND_URL = 'http://localhost/stripe-backend/job-board-optimized.html';
 
 let jobs = [];
 let activeFilter = 'all';
