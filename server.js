@@ -111,7 +111,7 @@ function publishPendingJob(pendingId) {
   return newJob;
 }
 
-app.use(cors());
+app.use(cors({ origin: true }));
 
 // ---- Webhook route MUST use the raw body for signature verification,
 // so it is registered before the express.json() middleware below. ----
