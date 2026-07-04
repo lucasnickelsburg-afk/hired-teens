@@ -186,7 +186,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
 });
 
 // All other routes can use normal JSON body parsing.
-app.use(express.json());
+// Raised from Express's 100kb default so job posts with a logo image
+// (encoded as a base64 data URL) aren't rejected before they're even read.
+app.use(express.json({ limit: '2mb' }));
 
 // ---- Public job listings ----
 app.get('/jobs', (req, res) => {
@@ -203,7 +205,7 @@ app.get('/admin/jobs', requireAdmin, (req, res) => {
 app.post('/admin/jobs', requireAdmin, (req, res) => {
   const {
     title, company, location, type, salary, payType,
-    startDate, endDate, email, link, description, tags,
+    startDate, endDate, email, link, description, tags, logo,
   } = req.body;
 
   const salaryRequired = payType !== 'unpaid';
@@ -214,7 +216,7 @@ app.post('/admin/jobs', requireAdmin, (req, res) => {
   const jobs = readJobs();
   const newJob = {
     title, company, location, type, salary, payType,
-    startDate, endDate, email, link, description,
+    startDate, endDate, email, link, description, logo,
     tags: tags || [],
     id: 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     postedAt: Date.now(),
@@ -229,7 +231,7 @@ app.post('/admin/jobs', requireAdmin, (req, res) => {
 // ---- Admin: edit an existing job's details ----
 const EDITABLE_JOB_FIELDS = [
   'title', 'company', 'location', 'type', 'salary', 'payType',
-  'startDate', 'endDate', 'email', 'link', 'description', 'tags',
+  'startDate', 'endDate', 'email', 'link', 'description', 'tags', 'logo',
 ];
 
 app.put('/admin/jobs/:id', requireAdmin, (req, res) => {
@@ -276,18 +278,27 @@ function postLengthToQuantity(postLength) {
 }
 
 // ---- Validate a new job post and start a Checkout Session for it ----
+const MAX_LOGO_DATA_URL_LENGTH = 400 * 1024; // ~400KB as a base64 string; the
+// frontend resizes/compresses images before upload, so a legitimate logo
+// should be well under this — this is mainly a defense-in-depth backstop.
+
 app.post('/create-checkout-session', async (req, res) => {
   console.log('[create-checkout-session] request received');
   try {
     const {
       title, company, location, type, salary, payType,
-      startDate, endDate, postLength, email, link, description, tags,
+      startDate, endDate, postLength, email, link, description, tags, logo,
     } = req.body;
 
     const salaryRequired = payType !== 'unpaid';
     if (!title || !company || !location || !description || !email || (salaryRequired && !salary)) {
       console.log('[create-checkout-session] rejected: missing required fields');
       return res.status(400).json({ error: 'Please fill in title, business or organization name, location, pay, email, and description.' });
+    }
+
+    if (logo && (typeof logo !== 'string' || !logo.startsWith('data:image/') || logo.length > MAX_LOGO_DATA_URL_LENGTH)) {
+      console.log('[create-checkout-session] rejected: invalid or oversized logo');
+      return res.status(400).json({ error: 'That logo image is invalid or too large. Please try a smaller image.' });
     }
 
     const quantity = postLengthToQuantity(postLength);
@@ -303,7 +314,7 @@ app.post('/create-checkout-session', async (req, res) => {
       createdAt: new Date().toISOString(),
       job: {
         title, company, location, type, salary, payType,
-        startDate, endDate, postLength, email, link, description,
+        startDate, endDate, postLength, email, link, description, logo,
         tags: tags || [],
       },
     };
